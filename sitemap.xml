@@ -1,11 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://alexajt.github.io/milestone-5/about.html</loc>
-    <lastmod>2026-11-07T03:19:04.035Z</lastmod>
+    <loc>https://alexajt.github.io/national-parks/about.html</loc>
+    <lastmod>2026-11-13T23:47:15.579Z</lastmod>
   </url>
   <url>
-    <loc>https://alexajt.github.io/milestone-5/index.html</loc>
-    <lastmod>2026-11-07T03:30:37.560Z</lastmod>
+    <loc>https://alexajt.github.io/national-parks/explore.html</loc>
+    <lastmod>2026-11-13T23:12:06.443Z</lastmod>
+  </url>
+  <url>
+    <loc>https://alexajt.github.io/national-parks/index.html</loc>
+    <lastmod>2026-11-13T23:47:20.475Z</lastmod>
+  </url>
+  <url>
+    <loc>https://alexajt.github.io/national-parks/story.html</loc>
+    <lastmod>2026-11-13T23:48:42.845Z</lastmod>
   </url>
 </urlset>

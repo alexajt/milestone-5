@@ -1,1 +1,1 @@
-Sitemap: https://alexajt.github.io/milestone-5/sitemap.xml
+Sitemap: https://alexajt.github.io/national-parks/sitemap.xml

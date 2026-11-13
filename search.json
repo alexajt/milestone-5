@@ -4,41 +4,62 @@
     "href": "about.html",
     "title": "About This Project",
     "section": "",
-    "text": "A Year in the National Parks explores historical visitation patterns, seasonal swings, and long-term growth across the United States National Park System from 1979 to 2025."
+    "text": "National Parks, Year by Year: Visitation, 2000–2025 examines annual attendance patterns, park designation differences, and post-2020 recovery shifts across the United States National Park System."
   },
   {
     "objectID": "about.html#project-overview",
     "href": "about.html#project-overview",
     "title": "About This Project",
     "section": "",
-    "text": "A Year in the National Parks explores historical visitation patterns, seasonal swings, and long-term growth across the United States National Park System from 1979 to 2025."
+    "text": "National Parks, Year by Year: Visitation, 2000–2025 examines annual attendance patterns, park designation differences, and post-2020 recovery shifts across the United States National Park System."
   },
   {
     "objectID": "about.html#data-sources",
     "href": "about.html#data-sources",
     "title": "About This Project",
     "section": "Data Sources",
-    "text": "Data Sources\n\nNPS Visitor Use Statistics Portal\nNPS Visitor Use Statistics Dashboard\n\nThe dataset rendered on the homepage (nps_annual_visits_1979_2025.csv) combines historical National Park Service annual visitation reports across three reporting periods (1979–1998, 1999–2018, and 2019–2025), totaling 16,095 park-year observations."
+    "text": "Data Sources\n\nNPS Visitor Use Statistics Portal\nNPS Visitor Use Statistics Dashboard\n\nThe repository CSV (nps_annual_visits_1979_2025.csv) preserves the full compiled 1979–2025 National Park Service annual visitation series (16,095 park-year rows) unchanged. For consistent 21st-century comparisons across the website, pages filter that CSV in R to 2000–2025, yielding 9,612 verified park-year observations across 400 reporting NPS units."
+  },
+  {
+    "objectID": "about.html#key-limitations",
+    "href": "about.html#key-limitations",
+    "title": "About This Project",
+    "section": "Key Limitations",
+    "text": "Key Limitations\n\nAnnual granularity only: Each observation records one park unit’s calendar-year total recreation visits; monthly, seasonal, and holiday-level patterns cannot be inferred from this dataset.\nChanging unit counts: Active reporting units grew from 343 in 2000 to 400 in 2025, so the Visitation After 2020 tab restricts its 2015–2025 comparison to the 372 units that reported in every year of that window.\nDescriptive figures & grouping: Unit categories are grouped from official NPS name suffixes (NP/NPRES, NRA/PKWY/NS/NL, NM, and historic/memorial designations), and annual counts alone do not separate visitor demand from temporary closures, reservation systems, or NPS counting updates."
+  },
+  {
+    "objectID": "explore.html",
+    "href": "explore.html",
+    "title": "Explore by Park: Annual Visitation, 2000–2025",
+    "section": "",
+    "text": "Choose Park (400 NPS Units)\n      \n      \n    \n\n    \n      \n        Filter Category\n      \n      \n        All Categories\n        National Parks & Preserves\n        Recreation Areas, Seashores & Parkways\n        Historic Sites, Battlefields & Memorials\n        National Monuments\n      \n    \n\n    \n      \n        Start Year\n      \n      \n    \n\n    \n      \n        End Year\n      \n      \n    \n  \n\n\n\n\n  \n    \n      \n        National Park illustrated overview\n        Horizontal screenprint illustration for the selected park.\n      \n    \n  \n\n  \n    \n\n    \n      \n      \n    \n\n    \n      \n\n\n\nYears Shown\n\n\n\nEnd-Year Visits\n\n\n\nPeak Year in Range\n\n\n\nLowest Year in Range\n\n\n\nMedian Annual Visits\n\n\n\nTotal Visits in Range\n\n\n\n\n\n    \n    \n      Stylized park-symbol emblem: the distant sage ridge traces yearly visits across the selected span, and the sun aligns with the peak year.\n    \n  \n\n\n\n\n  \n  \n    Each point shows one calendar year's total recreation visits for the selected unit (hover any point for exact visits and national rank that year). Source: NPS Visitor Use Statistics (2000–2025)."
   },
   {
     "objectID": "index.html",
     "href": "index.html",
-    "title": "A Year in the National Parks",
+    "title": "National Parks, Year by Year: Visitation, 2000–2025",
     "section": "",
-    "text": "Every point in the scatterplot below represents one National Park Service unit in a single year between 1979 and 2025 (16,095 park-year observations in total). Grouping these observations by Park Unit Type reveals a surprising pattern: while flagship National Parks draw huge headlines, Recreation Areas, Seashores & Parkways actually hold the highest median attendance (~1.16 million visits per year), whereas Historic Sites and National Monuments make up the vast majority of locations with smaller, steadier crowds (~110,000 visits per year).\n\n\n\n\n\n\n\n\nFigure 1: Annual recreation visits across 16,095 park-year observations (1979–2025), colored by NPS unit category. Solid lines track the median attendance for each category each year."
+    "text": "Each dot below is one National Park Service unit in one calendar year from 2000 to 2025 (9,612 annual observations across 400 units). Hover over any dot to see which park it represents, explore individual parks on the Park Attendance tab, or read the fixed comparison on the Visitation After 2020 tab.\n\n\n\n\n\n\n\n\nFigure 1: 9,612 annual park-year observations (2000–2025) colored by NPS designation, with solid lines showing each category’s yearly median. Hover any dot for park details (drag horizontally to zoom into specific years; double-click to reset). Plotted on a pseudo-log vertical scale so smaller sites remain visible alongside multi-million-visit parks. Source: NPS Visitor Use Statistics."
   },
   {
-    "objectID": "index.html#does-park-designation-drive-crowd-size",
-    "href": "index.html#does-park-designation-drive-crowd-size",
-    "title": "A Year in the National Parks",
+    "objectID": "index.html#does-park-designation-shape-annual-crowd-size",
+    "href": "index.html#does-park-designation-shape-annual-crowd-size",
+    "title": "National Parks, Year by Year: Visitation, 2000–2025",
     "section": "",
-    "text": "Every point in the scatterplot below represents one National Park Service unit in a single year between 1979 and 2025 (16,095 park-year observations in total). Grouping these observations by Park Unit Type reveals a surprising pattern: while flagship National Parks draw huge headlines, Recreation Areas, Seashores & Parkways actually hold the highest median attendance (~1.16 million visits per year), whereas Historic Sites and National Monuments make up the vast majority of locations with smaller, steadier crowds (~110,000 visits per year).\n\n\n\n\n\n\n\n\nFigure 1: Annual recreation visits across 16,095 park-year observations (1979–2025), colored by NPS unit category. Solid lines track the median attendance for each category each year."
+    "text": "Each dot below is one National Park Service unit in one calendar year from 2000 to 2025 (9,612 annual observations across 400 units). Hover over any dot to see which park it represents, explore individual parks on the Park Attendance tab, or read the fixed comparison on the Visitation After 2020 tab.\n\n\n\n\n\n\n\n\nFigure 1: 9,612 annual park-year observations (2000–2025) colored by NPS designation, with solid lines showing each category’s yearly median. Hover any dot for park details (drag horizontally to zoom into specific years; double-click to reset). Plotted on a pseudo-log vertical scale so smaller sites remain visible alongside multi-million-visit parks. Source: NPS Visitor Use Statistics."
   },
   {
-    "objectID": "index.html#key-takeaways-from-the-data",
-    "href": "index.html#key-takeaways-from-the-data",
-    "title": "A Year in the National Parks",
-    "section": "Key Takeaways from the Data",
-    "text": "Key Takeaways from the Data\n\nRecreation Areas, Seashores & Parkways lead in median crowd size: With a median of 1.16 million annual visits, scenic roadways, beaches, and urban recreation areas consistently draw larger typical crowds than remote parks.\nNational Parks & Preserves show steady multi-decade growth: Across 3,394 park-year observations, flagship National Parks have grown to a median of over 537,000 annual visits, with top units exceeding 10 million visitors.\nHistoric Sites & National Monuments form the backbone of the system: Over two-thirds of all park-year observations (10,808 out of 16,095) belong to historical parks, battlefields, memorials, and monuments, which typically welcome around 105,000 to 123,000 visitors per year."
+    "objectID": "index.html#key-takeaways-20002025",
+    "href": "index.html#key-takeaways-20002025",
+    "title": "National Parks, Year by Year: Visitation, 2000–2025",
+    "section": "Key Takeaways (2000–2025)",
+    "text": "Key Takeaways (2000–2025)\n\nRecreation Areas, Seashores & Parkways lead in typical annual crowd size: Across 1,109 park-year observations (44 units), scenic roadways, seashores, and urban recreation corridors record a median of 1.09 million annual visits.\nNational Parks & Preserves sustain strong 21st-century attendance: Across 1,953 park-year observations (76 units), flagship National Parks and Preserves hold a median of 520,171 annual visits, with top units exceeding 10 million visits per year.\nHistoric Sites & National Monuments form the numerical majority of the system: Over two-thirds of all 2000–2025 observations (6,550 of 9,612) belong to historic sites, battlefields, memorials, and monuments, welcoming medians of roughly 97,000 to 113,000 annual visits."
+  },
+  {
+    "objectID": "story.html",
+    "href": "story.html",
+    "title": "Visitation After 2020",
+    "section": "",
+    "text": "Figure 1: Annual recreation visits across the 372 NPS units that reported in every calendar year from 2015 through 2025, summed by designation category and indexed so each category’s 2019 total equals 100.\n\n\n\n\n\nThe chart above tracks combined annual recreation visits for the 372 National Park Service units that reported attendance in every single year from 2015 through 2025, indexed so each category’s 2019 total equals 100.0. In 2020, all four categories declined, but by very different margins: Recreation Areas, Seashores & Parkways (43 units) edged down to 92.9 and National Parks & Preserves (75 units) fell to 75.3, whereas Historic Sites, Battlefields & Memorials (191 units) dropped to 53.8 and National Monuments (63 units) fell to 44.0. By 2021, both National Parks & Preserves (102.9) and Recreation Areas, Seashores & Parkways (101.2) had already exceeded their 2019 totals and remained above that benchmark in 2025 (103.8 and 101.8). In contrast, Historic Sites (86.3 in 2025) and National Monuments (86.2 in 2025) stayed below their 2019 baselines in every post-2020 year.\nThis split is worth examining because system-wide totals make post-2020 attendance look nearly flat: across these same 372 continuously reporting units, total annual visits moved from 325.0 million in 2019 down to 236.4 million in 2020, back up to 326.7 million in 2024, and to 314.1 million in 2025. Holding the set of reporting units constant shows that the near-return to 2019 aggregate volume is not a uniform recovery across the park system, nor an artifact of newly added park units—higher post-2020 totals at flagship parks and recreation corridors offset persistent shortfalls across more than 250 monuments, battlefields, memorials, and historic sites.\nData source and limitations: Figures come from National Park Service Visitor Use Statistics annual reports compiled in nps_annual_visits_1979_2025.csv. Three limitations apply to this comparison: first, restricting to the 372 continuously reporting units (out of 400 units active at some point during 2015–2025) keeps the panel consistent over time but excludes 28 newer or intermittently reporting units; second, unit categories are grouped from official NPS name suffixes; and third, annual visit counts are purely descriptive—they cannot separate changes in visitor demand from operational factors such as facility closures, construction, timed-entry rules, or counting-method updates, and they provide no information on monthly or seasonal visitation within a year."
   }
 ]
