@@ -1,0 +1,899 @@
+---
+title: "Explore by Park: Annual Visitation, 2000–2025"
+subtitle: "Choose a National Park Service unit, filter by category, or narrow the years shown to inspect its summary statistics and yearly attendance"
+execute:
+  echo: false
+  warning: false
+  message: false
+toc: false
+---
+
+```{r}
+#| label: unified-park-explorer
+#| column: page-inset
+
+library(tidyverse)
+library(plotly)
+library(jsonlite)
+library(htmltools)
+
+annual_visits <- read_csv(
+  "nps_annual_visits_1979_2025.csv",
+  show_col_types = FALSE
+) |>
+  filter(year >= 2000, year <= 2025) |>
+  mutate(
+    suffix = word(park, -1),
+    park_type = case_when(
+      suffix %in% c("NP", "NPRES", "PRES") ~ "National Parks & Preserves",
+      suffix %in% c("NRA", "NS", "NL", "PKWY", "NR", "NSR", "W&SR", "NRRA") ~ "Recreation Areas, Seashores & Parkways",
+      suffix %in% c("NM", "Monument") ~ "National Monuments",
+      TRUE ~ "Historic Sites, Battlefields & Memorials"
+    )
+  ) |>
+  group_by(year) |>
+  mutate(
+    annual_rank = min_rank(desc(recreation_visits)),
+    reporting_units = n()
+  ) |>
+  ungroup() |>
+  arrange(park, year)
+
+park_payload <- annual_visits |>
+  group_by(park, park_type) |>
+  summarize(
+    years = list(year),
+    visits = list(recreation_visits),
+    ranks = list(annual_rank),
+    units = list(reporting_units),
+    .groups = "drop"
+  )
+
+parks_json <- toJSON(park_payload, auto_unbox = TRUE)
+
+ui <- HTML(paste0(
+'
+<!-- 1. TOP BAR: Choose Park, Category Filter & Year Range -->
+<div class="np-explore-controls">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-5">
+      <label for="park-art-select" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;color:#1E382B;display:block;margin-bottom:4px;">
+        Choose Park (400 NPS Units)
+      </label>
+      <select id="park-art-select" class="form-select" style="background-color:#FAF7F0;border-color:#C6C2B2;color:#1E382B;font-weight:600;" aria-label="Select a National Park Service unit"></select>
+    </div>
+
+    <div class="col-md-3">
+      <label for="park-cat-filter" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;color:#4A5B51;display:block;margin-bottom:4px;">
+        Filter Category
+      </label>
+      <select id="park-cat-filter" class="form-select" style="background-color:#FAF7F0;border-color:#C6C2B2;color:#223028;">
+        <option value="ALL">All Categories</option>
+        <option value="National Parks & Preserves">National Parks &amp; Preserves</option>
+        <option value="Recreation Areas, Seashores & Parkways">Recreation Areas, Seashores &amp; Parkways</option>
+        <option value="Historic Sites, Battlefields & Memorials">Historic Sites, Battlefields &amp; Memorials</option>
+        <option value="National Monuments">National Monuments</option>
+      </select>
+    </div>
+
+    <div class="col-6 col-md-2">
+      <label for="year-start-select" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;color:#4A5B51;display:block;margin-bottom:4px;">
+        Start Year
+      </label>
+      <select id="year-start-select" class="form-select" style="background-color:#FAF7F0;border-color:#C6C2B2;color:#223028;"></select>
+    </div>
+
+    <div class="col-6 col-md-2">
+      <label for="year-end-select" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em;font-weight:700;color:#4A5B51;display:block;margin-bottom:4px;">
+        End Year
+      </label>
+      <select id="year-end-select" class="form-select" style="background-color:#FAF7F0;border-color:#C6C2B2;color:#223028;"></select>
+    </div>
+  </div>
+</div>
+
+<!-- 2. MIDDLE ROW: Picture on Left + Park Information on Right -->
+<div class="np-explore-split">
+  <div>
+    <figure style="margin:0;">
+      <svg id="park-art-svg" viewBox="0 0 640 450" width="100%" style="display:block;border-radius:10px;box-shadow:0 4px 14px rgba(30,56,43,0.14);" role="img" aria-labelledby="art-svg-title art-svg-desc">
+        <title id="art-svg-title">National Park illustrated overview</title>
+        <desc id="art-svg-desc">Horizontal screenprint illustration for the selected park.</desc>
+      </svg>
+    </figure>
+  </div>
+
+  <div>
+    <h3 id="info-park-title" style="margin:0 0 8px 0;font-size:1.45rem;color:#1E382B;"></h3>
+
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <span id="park-art-category-badge" style="display:inline-block;font-size:0.77rem;font-weight:600;padding:3px 10px;border-radius:999px;background:#E2EAE3;color:#1E382B;border:1px solid #BFCFC2;"></span>
+      <span id="park-art-motif-badge" style="display:inline-block;font-size:0.77rem;font-weight:600;padding:3px 10px;border-radius:999px;background:#EFE7D4;color:#5A4320;border:1px solid #D8C9A8;"></span>
+    </div>
+
+    <div style="background:#FAF7F0;border:1px solid #DFDBD0;border-radius:10px;padding:12px 16px;">
+      <table class="table table-sm mb-0" style="font-size:0.9rem;--bs-table-bg:transparent;color:#223028;">
+        <tbody>
+          <tr><th scope="row" style="color:#4A5B51;border-color:#EAE6DA;">Years Shown</th><td id="stat-span" class="text-end fw-semibold" style="border-color:#EAE6DA;"></td></tr>
+          <tr><th scope="row" style="color:#4A5B51;border-color:#EAE6DA;">End-Year Visits</th><td id="stat-latest" class="text-end fw-semibold" style="border-color:#EAE6DA;"></td></tr>
+          <tr><th scope="row" style="color:#4A5B51;border-color:#EAE6DA;">Peak Year in Range</th><td id="stat-peak" class="text-end fw-semibold" style="border-color:#EAE6DA;"></td></tr>
+          <tr><th scope="row" style="color:#4A5B51;border-color:#EAE6DA;">Lowest Year in Range</th><td id="stat-min" class="text-end fw-semibold" style="border-color:#EAE6DA;"></td></tr>
+          <tr><th scope="row" style="color:#4A5B51;border-color:#EAE6DA;">Median Annual Visits</th><td id="stat-median" class="text-end fw-semibold" style="border-color:#EAE6DA;"></td></tr>
+          <tr><th scope="row" style="color:#4A5B51;border-bottom:none;">Total Visits in Range</th><td id="stat-total" class="text-end fw-semibold" style="border-bottom:none;"></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:0.8rem;color:#5A6B60;margin:8px 2px 0 2px;line-height:1.4;">
+      Stylized park-symbol emblem: the distant sage ridge traces yearly visits across the selected span, and the sun aligns with the peak year.
+    </p>
+  </div>
+</div>
+
+<!-- 3. BOTTOM: Individual Yearly Visitation Graph for the Selected Park -->
+<div style="background:#FAF7F0;border:1px solid #D5D2C4;border-radius:14px;padding:18px 20px 10px 20px;margin-top:18px;box-shadow:0 4px 16px rgba(30,56,43,0.04);">
+  <div id="single-park-plot" style="width:100%;height:370px;"></div>
+  <p style="font-size:0.83rem;color:#5A6B60;margin:6px 0 4px 4px;">
+    Each point shows one calendar year\'s total recreation visits for the selected unit (hover any point for exact visits and national rank that year). Source: NPS Visitor Use Statistics (2000–2025).
+  </p>
+</div>
+
+<script>
+(() => {
+  const PARKS = ', parks_json, ';
+  const fmt = new Intl.NumberFormat("en-US");
+
+  const C = {
+    pineDark: "#1B3326",
+    pineMid: "#2D533E",
+    pineSoft: "#426B53",
+    sageMid: "#678B74",
+    sageLight: "#98B4A0",
+    sageMist: "#B8CBB9",
+    cream: "#FAF7F0",
+    sandSky1: "#E2DAC2",
+    sandSky2: "#ECE5D1",
+    sandSky3: "#F5F0E2",
+    ochreSun: "#D89E44",
+    ochreMid: "#E6BC72",
+    ochreGlow: "#F4E4B8",
+    terracotta: "#B06242",
+    terraMid: "#944D32",
+    terraDark: "#703723",
+    waterDeep: "#355C61",
+    waterMid: "#4E7A7E",
+    waterLight: "#8BAEB0",
+    stoneLight: "#DCD7C8",
+    stoneMid: "#A2AAA1",
+    stoneDark: "#6E7871"
+  };
+
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function medianValue(arr) {
+    if (!arr.length) return 0;
+    const s = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+  }
+
+  function classifyMotif(park, parkType) {
+    const p = park;
+    if (/Gateway Arch/i.test(p)) return { id: "gateway_arch", label: "Gateway Arch & Riverfront" };
+    if (/Statue of Liberty|Castle Clinton|Governors Island/i.test(p)) return { id: "liberty", label: "Harbor Torch & Crown" };
+    if (/Golden Gate|New River Gorge/i.test(p)) return { id: "bridge", label: "Suspension Span & Headlands" };
+    if (/Yosemite|Kings Canyon/i.test(p)) return { id: "halfdome", label: "El Capitan, Half Dome & Valley" };
+    if (/Yellowstone|Hot Springs/i.test(p)) return { id: "geyser", label: "Geyser Plume & Hot-Spring Pool" };
+    if (/Arches|Natural Bridges|Rainbow Bridge/i.test(p)) return { id: "arch", label: "Sandstone Arch & Red-Rock Buttes" };
+    if (/Saguaro|Organ Pipe|Casa Grande|Tonto|Coronado|Tumacacori/i.test(p)) return { id: "saguaro", label: "Sonoran Saguaros & Bajadas" };
+    if (/Joshua Tree|Mojave|Death Valley/i.test(p)) return { id: "joshua", label: "Joshua Trees & Granite Boulders" };
+    if (/White Sands|Sand Dunes|Indiana Dunes|Sleeping Bear Dunes/i.test(p)) return { id: "dunes", label: "Wind-Sculpted Dune Ridges" };
+    if (/Cave|Caverns/i.test(p)) return { id: "cave", label: "Limestone Cavern & Stalactites" };
+    if (/Redwood|Sequoia|Muir Woods|Congaree|Big Thicket/i.test(p)) return { id: "redwood", label: "Ancient Giant Grove & Sunbeams" };
+    if (/Volcano|Crater Lake|Mount Rainier|Lassen|Haleakala|Denali|Katmai|Wrangell|Lake Clark|Capulin|Sunset Crater|El Malpais|Lava Beds|Craters of the Moon/i.test(p)) {
+      return { id: "volcano", label: "Glaciated Peak & Caldera Lake" };
+    }
+    if (/Everglades|Biscayne|Dry Tortugas|Virgin Islands|Big Cypress|American Samoa|Buck Island|Salt River Bay|Kaloko|Pu`uhonua|Puukohola|Channel Islands|De Soto|Canaveral|Jean Lafitte/i.test(p)) {
+      return { id: "tropics", label: "Coastal Palms, Heron & Lagoon" };
+    }
+    if (/Acadia|\bNS\b|\bNL\b|Point Reyes|Cape |Island|Maritime|New Bedford|Salem Maritime|Olympic|Kenai Fjords|Glacier Bay/i.test(p)) {
+      return { id: "lighthouse", label: "Headland Lighthouse & Sea Stacks" };
+    }
+    if (/Canyon|Zion|Bryce|Badlands|Big Bend|Capitol Reef|Mesa Verde|Petrified Forest|Pinnacles|Guadalupe|Chiricahua|Bandelier|Chaco|Colorado NM|Dinosaur|El Morro|Gila|Hovenweep|Montezuma|Navajo|Salinas|Walnut|Wupatki|Aztec|Bighorn Canyon|Curecanti|Lake Meredith|Amistad/i.test(p)) {
+      return { id: "canyon", label: "Tiered Canyon Cliffs & River" };
+    }
+    if (/\bPKWY\b|Great Smoky|Shenandoah|Appalachian|Blue Ridge|Catoctin|Cumberland Gap|Delaware Water Gap/i.test(p)) {
+      return { id: "parkway", label: "Misty Ridges & Scenic Parkway" };
+    }
+    if (/\bMEM\b|Washington MON|Lincoln|Jefferson/i.test(p)) {
+      return { id: "memorial", label: "Classical Colonnade & Reflecting Pool" };
+    }
+    if (/Fort |\bNB\b|\bNMP\b|\bNBS\b|Battlefield|Gettysburg|Vicksburg|Shiloh|Antietam|Yorktown|Saratoga|Chickamauga|Manassas|Fredericksburg|Petersburg|Appomattox|Minute Man|Valley Forge|Guilford|Kings Mountain|Cowpens|Pea Ridge|Wilson\'s Creek|Kennesaw|Stones River|Monocacy|Richmond|Castillo/i.test(p)) {
+      return { id: "fort", label: "Stone Bastion, Cannon & Flag" };
+    }
+    if (parkType === "Historic Sites, Battlefields & Memorials") {
+      return { id: "heritage", label: "Heritage Hall & Bell Cupola" };
+    }
+    return { id: "alpine", label: "Alpine Peaks, Spruce Forest & River" };
+  }
+
+  function detailedPine(x, baseY, h, colDark, colLit) {
+    const t1 = h * 0.22, t2 = h * 0.30, t3 = h * 0.38, t4 = h * 0.46;
+    const lit = colLit || C.pineSoft;
+    return `
+      <rect x="${(x - h * 0.04).toFixed(1)}" y="${(baseY - h * 0.12).toFixed(1)}" width="${(h * 0.08).toFixed(1)}" height="${(h * 0.16).toFixed(1)}" fill="${C.pineDark}"/>
+      <polygon points="${x},${baseY - h} ${x - t1},${baseY - h * 0.68} ${x + t1},${baseY - h * 0.68}" fill="${colDark}"/>
+      <polygon points="${x},${baseY - h} ${x + t1},${baseY - h * 0.68} ${x},${baseY - h * 0.68}" fill="${lit}" fill-opacity="0.45"/>
+      <polygon points="${x},${baseY - h * 0.78} ${x - t2},${baseY - h * 0.46} ${x + t2},${baseY - h * 0.46}" fill="${colDark}"/>
+      <polygon points="${x},${baseY - h * 0.78} ${x + t2},${baseY - h * 0.46} ${x},${baseY - h * 0.46}" fill="${lit}" fill-opacity="0.4"/>
+      <polygon points="${x},${baseY - h * 0.56} ${x - t3},${baseY - h * 0.22} ${x + t3},${baseY - h * 0.22}" fill="${colDark}"/>
+      <polygon points="${x},${baseY - h * 0.36} ${x - t4},${baseY} ${x + t4},${baseY}" fill="${colDark}"/>
+    `;
+  }
+
+  function bird(x, y, s) {
+    return `<path d="M${x - 7 * s},${y + 2 * s} Q${x - 3 * s},${y - 4 * s} ${x},${y} Q${x + 3 * s},${y - 4 * s} ${x + 7 * s},${y + 2 * s}" fill="none" stroke="${C.pineMid}" stroke-width="${(1.4 * s).toFixed(1)}" stroke-linecap="round"/>`;
+  }
+
+  function cloud(x, y, w) {
+    const h = w * 0.22;
+    return `<path d="M${x},${y} L${x + w},${y} C${x + w},${y - h * 0.6} ${x + w * 0.82},${y - h * 0.65} ${x + w * 0.76},${y - h * 0.45} C${x + w * 0.68},${y - h} ${x + w * 0.42},${y - h} ${x + w * 0.34},${y - h * 0.5} C${x + w * 0.22},${y - h * 0.75} ${x},${y - h * 0.55} ${x},${y} Z" fill="${C.cream}" fill-opacity="0.72"/>`;
+  }
+
+  function renderScene(motifId) {
+    switch (motifId) {
+      case "lighthouse":
+        return `
+          <rect x="28" y="274" width="584" height="108" fill="${C.waterMid}"/>
+          <rect x="28" y="316" width="584" height="66" fill="${C.waterDeep}"/>
+          <polygon points="486,278 504,242 528,252 542,278" fill="${C.pineMid}"/>
+          <polygon points="504,242 528,252 520,278 500,278" fill="${C.pineDark}" fill-opacity="0.45"/>
+          <polygon points="548,280 562,256 580,264 588,280" fill="${C.pineDark}"/>
+          <polygon points="212,138 612,86 612,188" fill="${C.ochreGlow}" fill-opacity="0.42"/>
+          <polygon points="188,138 28,106 28,166" fill="${C.ochreGlow}" fill-opacity="0.24"/>
+          <path d="M270,294 Q340,285 410,294 T550,294" fill="none" stroke="${C.cream}" stroke-width="2.2" stroke-opacity="0.8"/>
+          <path d="M310,324 Q390,315 470,324 T605,324" fill="none" stroke="${C.cream}" stroke-width="1.8" stroke-opacity="0.65"/>
+          <path d="M290,354 Q370,346 450,354 T590,354" fill="none" stroke="${C.waterLight}" stroke-width="1.6" stroke-opacity="0.7"/>
+          <rect x="134" y="218" width="44" height="30" fill="${C.cream}" stroke="${C.pineDark}" stroke-width="1.4"/>
+          <polygon points="128,218 156,198 184,218" fill="${C.terracotta}" stroke="${C.pineDark}" stroke-width="1.3"/>
+          <rect x="145" y="226" width="8" height="10" fill="${C.ochreMid}"/>
+          <rect x="160" y="226" width="8" height="10" fill="${C.ochreMid}"/>
+          <polygon points="182,254 190,148 210,148 218,254" fill="${C.cream}" stroke="${C.pineDark}" stroke-width="1.6"/>
+          <polygon points="200,148 210,148 218,254 203,254" fill="${C.stoneLight}" fill-opacity="0.55"/>
+          <polygon points="185,208 188,176 212,176 215,208" fill="${C.terracotta}"/>
+          <rect x="184" y="143" width="32" height="6" rx="2" fill="${C.pineDark}"/>
+          <rect x="191" y="128" width="18" height="15" fill="${C.ochreGlow}" stroke="${C.pineDark}" stroke-width="1.5"/>
+          <polygon points="187,128 200,113 213,128" fill="${C.pineDark}"/>
+          <line x1="200" y1="113" x2="200" y2="105" stroke="${C.pineDark}" stroke-width="2"/>
+          <path d="M28,246 L128,238 L234,252 L308,308 L292,382 L28,382 Z" fill="${C.pineMid}"/>
+          <polygon points="234,252 308,308 292,382 214,382 248,308" fill="${C.pineSoft}" fill-opacity="0.55"/>
+          <path d="M28,284 L156,274 L254,328 L236,382 L28,382 Z" fill="${C.pineDark}"/>
+          <path d="M276,326 Q304,316 334,328" fill="none" stroke="${C.cream}" stroke-width="2.6" stroke-linecap="round"/>
+          ${detailedPine(58, 258, 72, C.pineDark)}
+          ${detailedPine(94, 252, 58, C.pineDark)}
+          ${detailedPine(118, 256, 46, C.pineMid)}
+        `;
+
+      case "arch":
+        return `
+          <polygon points="46,282 78,224 166,224 198,282" fill="${C.terracotta}" fill-opacity="0.58"/>
+          <line x1="66" y1="246" x2="178" y2="246" stroke="${C.ochreGlow}" stroke-width="1.2" stroke-opacity="0.55"/>
+          <polygon points="496,282 512,216 534,216 548,254 562,232 576,232 594,282" fill="${C.terracotta}" fill-opacity="0.65"/>
+          <rect x="28" y="280" width="584" height="102" fill="${C.terracotta}"/>
+          <path d="M28,306 Q190,292 360,308 T612,300" fill="none" stroke="${C.terraDark}" stroke-width="1.6" stroke-opacity="0.55"/>
+          <path d="M188,338 L214,234 C232,148 286,108 356,108 C428,108 478,152 496,238 L522,338 L434,338 L426,258 C416,194 390,164 356,164 C318,164 290,196 280,260 L270,338 Z" fill="${C.terraDark}"/>
+          <path d="M204,338 L228,238 C244,158 294,118 356,118 C420,118 466,160 482,242 L504,338 L446,338 L438,256 C428,188 396,158 356,158 C312,158 282,190 270,258 L260,338 Z" fill="${C.terracotta}"/>
+          <path d="M236,216 C264,156 308,128 356,128 C398,128 434,150 456,196" fill="none" stroke="${C.ochreMid}" stroke-width="3" stroke-opacity="0.55"/>
+          <path d="M28,324 Q195,296 368,324 T612,314 L612,382 L28,382 Z" fill="${C.pineDark}"/>
+          <ellipse cx="116" cy="336" rx="14" ry="9" fill="${C.pineSoft}"/>
+          <ellipse cx="102" cy="326" rx="9" ry="11" transform="rotate(-22 102 326)" fill="${C.sageMid}"/>
+          <ellipse cx="122" cy="324" rx="9" ry="12" transform="rotate(18 122 324)" fill="${C.sageMid}"/>
+          <ellipse cx="134" cy="338" rx="11" ry="8" fill="${C.pineSoft}"/>
+        `;
+
+      case "halfdome":
+        return `
+          <polygon points="28,118 176,138 222,296 28,296" fill="${C.stoneMid}"/>
+          <polygon points="28,118 128,132 154,296 28,296" fill="${C.stoneLight}"/>
+          <line x1="92" y1="127" x2="108" y2="296" stroke="${C.stoneDark}" stroke-width="1.2" stroke-opacity="0.5"/>
+          <polygon points="146,162 155,163 166,292 140,292" fill="${C.cream}" fill-opacity="0.92"/>
+          <circle cx="154" cy="290" r="16" fill="${C.cream}" fill-opacity="0.65"/>
+          <path d="M312,296 L312,134 C338,84 446,88 482,184 L524,296 Z" fill="${C.stoneLight}"/>
+          <path d="M312,134 C338,92 428,96 458,188 L492,296 L450,296 C428,202 380,148 312,144 Z" fill="${C.stoneMid}" fill-opacity="0.5"/>
+          <line x1="312" y1="134" x2="312" y2="296" stroke="${C.pineDark}" stroke-width="2.5"/>
+          <polygon points="486,296 554,178 612,206 612,296" fill="${C.stoneDark}"/>
+          <rect x="28" y="292" width="584" height="90" fill="${C.pineMid}"/>
+          <path d="M28,324 Q320,304 612,326 L612,382 L28,382 Z" fill="${C.pineDark}"/>
+          <path d="M276,382 C298,350 262,322 294,294 L324,294 C304,322 346,348 332,382 Z" fill="${C.waterLight}"/>
+          <line x1="292" y1="336" x2="318" y2="336" stroke="${C.cream}" stroke-width="1.6" stroke-opacity="0.7"/>
+          ${detailedPine(62, 332, 96, C.pineDark)}
+          ${detailedPine(108, 338, 74, C.pineDark)}
+          ${detailedPine(152, 334, 58, C.pineMid)}
+          ${detailedPine(498, 336, 64, C.pineMid)}
+          ${detailedPine(542, 334, 82, C.pineDark)}
+          ${detailedPine(584, 330, 98, C.pineDark)}
+        `;
+
+      case "geyser":
+        return `
+          <path d="M28,284 Q320,264 612,284 L612,382 L28,382 Z" fill="${C.pineMid}"/>
+          <circle cx="320" cy="96" r="36" fill="${C.cream}" fill-opacity="0.92"/>
+          <circle cx="286" cy="122" r="27" fill="${C.cream}" fill-opacity="0.88"/>
+          <circle cx="354" cy="120" r="28" fill="${C.cream}" fill-opacity="0.88"/>
+          <circle cx="302" cy="156" r="22" fill="${C.cream}" fill-opacity="0.85"/>
+          <circle cx="338" cy="154" r="22" fill="${C.cream}" fill-opacity="0.85"/>
+          <path d="M302,292 Q310,196 294,116 L346,116 Q330,196 338,292 Z" fill="${C.cream}"/>
+          <line x1="316" y1="286" x2="312" y2="132" stroke="${C.waterLight}" stroke-width="1.6" stroke-dasharray="6,5"/>
+          <line x1="325" y1="286" x2="328" y2="138" stroke="${C.waterLight}" stroke-width="1.6" stroke-dasharray="6,5"/>
+          <path d="M196,326 Q320,266 444,326 L504,382 L136,382 Z" fill="${C.stoneLight}"/>
+          <path d="M224,344 Q320,308 416,344 L456,382 L184,382 Z" fill="${C.sandSky1}"/>
+          <ellipse cx="320" cy="358" rx="76" ry="14" fill="${C.waterMid}" stroke="${C.ochreMid}" stroke-width="2.5"/>
+          <ellipse cx="320" cy="358" rx="48" ry="8" fill="${C.waterLight}"/>
+          <path d="M28,318 L212,318 L158,382 L28,382 Z" fill="${C.pineDark}"/>
+          <path d="M612,318 L428,318 L482,382 L612,382 Z" fill="${C.pineDark}"/>
+          ${detailedPine(62, 324, 92, C.pineDark)}
+          ${detailedPine(106, 326, 72, C.pineDark)}
+          ${detailedPine(142, 324, 54, C.pineMid)}
+          ${detailedPine(498, 324, 56, C.pineMid)}
+          ${detailedPine(536, 326, 74, C.pineDark)}
+          ${detailedPine(580, 324, 94, C.pineDark)}
+        `;
+
+      case "saguaro":
+        return `
+          <polygon points="368,284 432,218 486,246 534,212 612,276 612,292 368,292" fill="${C.terracotta}" fill-opacity="0.65"/>
+          <path d="M28,286 Q210,248 390,282 T612,272 L612,382 L28,382 Z" fill="${C.terracotta}"/>
+          <path d="M28,322 Q290,294 612,326 L612,382 L28,382 Z" fill="${C.pineDark}"/>
+          <path d="M468,328 L468,186 M468,252 C442,252 442,236 442,208 M468,236 C494,236 494,220 494,196" fill="none" stroke="${C.pineMid}" stroke-width="13" stroke-linecap="round"/>
+          <path d="M336,316 L336,222 M336,268 C318,268 318,256 318,238" fill="none" stroke="${C.terraDark}" stroke-width="9" stroke-linecap="round"/>
+          <path d="M186,348 L186,128 M186,232 C144,232 144,210 144,166 M186,204 C228,204 228,184 228,146 M186,258 C216,258 216,244 216,222" fill="none" stroke="${C.pineDark}" stroke-width="19" stroke-linecap="round"/>
+          <line x1="189" y1="336" x2="189" y2="136" stroke="${C.sageMid}" stroke-width="1.6" stroke-opacity="0.55"/>
+          <path d="M92,356 L74,332 M92,356 L84,326 M92,356 L94,324 M92,356 L104,328 M92,356 L112,336" stroke="${C.sageLight}" stroke-width="2.6" stroke-linecap="round"/>
+        `;
+
+      case "joshua":
+        return `
+          <path d="M28,292 Q320,270 612,294 L612,382 L28,382 Z" fill="${C.terracotta}" fill-opacity="0.82"/>
+          <ellipse cx="468" cy="296" rx="84" ry="42" fill="${C.stoneDark}"/>
+          <ellipse cx="436" cy="276" rx="52" ry="30" fill="${C.stoneLight}"/>
+          <ellipse cx="504" cy="280" rx="46" ry="26" fill="${C.stoneMid}"/>
+          <ellipse cx="468" cy="252" rx="32" ry="20" fill="${C.stoneLight}"/>
+          <path d="M28,324 Q310,304 612,328 L612,382 L28,382 Z" fill="${C.pineDark}"/>
+          <path d="M178,342 L178,206 L132,164 M178,220 L228,172 M152,184 L150,144 M206,194 L242,190 M178,248 L142,238" fill="none" stroke="${C.pineDark}" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="130" cy="160" r="15" fill="${C.pineMid}"/>
+          <circle cx="150" cy="140" r="14" fill="${C.pineMid}"/>
+          <circle cx="230" cy="168" r="16" fill="${C.pineMid}"/>
+          <circle cx="246" cy="190" r="13" fill="${C.pineMid}"/>
+          <circle cx="138" cy="238" r="12" fill="${C.pineMid}"/>
+          <path d="M312,326 L312,248 L288,222 M312,258 L338,230" fill="none" stroke="${C.pineMid}" stroke-width="8" stroke-linecap="round"/>
+          <circle cx="286" cy="218" r="10" fill="${C.pineSoft}"/>
+          <circle cx="340" cy="228" r="10" fill="${C.pineSoft}"/>
+        `;
+
+      case "canyon":
+        return `
+          <polygon points="28,136 196,184 256,288 28,288" fill="${C.terracotta}"/>
+          <polygon points="612,128 438,178 378,288 612,288" fill="${C.terracotta}"/>
+          <line x1="28" y1="196" x2="208" y2="212" stroke="${C.ochreMid}" stroke-width="2" stroke-opacity="0.5"/>
+          <line x1="612" y1="190" x2="424" y2="208" stroke="${C.ochreMid}" stroke-width="2" stroke-opacity="0.5"/>
+          <polygon points="28,198 164,234 222,340 28,340" fill="${C.terraMid}"/>
+          <polygon points="612,192 472,230 412,340 612,340" fill="${C.terraMid}"/>
+          <polygon points="28,256 128,284 176,382 28,382" fill="${C.terraDark}"/>
+          <polygon points="612,250 508,280 462,382 612,382" fill="${C.terraDark}"/>
+          <rect x="140" y="286" width="360" height="96" fill="${C.pineDark}"/>
+          <path d="M312,286 C278,308 356,330 292,354 C258,366 274,376 256,382 L354,382 C366,364 328,348 366,326 C388,312 332,298 338,286 Z" fill="${C.waterLight}"/>
+          <path d="M304,344 Q326,340 344,344" fill="none" stroke="${C.cream}" stroke-width="1.8" stroke-opacity="0.75"/>
+        `;
+
+      case "bridge":
+        return `
+          <rect x="28" y="286" width="584" height="96" fill="${C.waterMid}"/>
+          <rect x="28" y="332" width="584" height="50" fill="${C.waterDeep}"/>
+          <path d="M28,214 L158,262 L126,302 L28,302 Z" fill="${C.pineMid}"/>
+          <path d="M612,206 L474,260 L506,302 L612,302 Z" fill="${C.pineMid}"/>
+          <path d="M28,184 Q110,256 192,118 Q320,262 448,118 Q530,256 612,184" fill="none" stroke="${C.terracotta}" stroke-width="3.6"/>
+          <g stroke="${C.terracotta}" stroke-width="1.4" stroke-opacity="0.85">
+            ${[0.35, 0.68].map(t => {
+              const xL = (1-t)*(1-t)*28 + 2*(1-t)*t*110 + t*t*192;
+              const yL = (1-t)*(1-t)*184 + 2*(1-t)*t*256 + t*t*118;
+              const xR = (1-t)*(1-t)*448 + 2*(1-t)*t*530 + t*t*612;
+              const yR = (1-t)*(1-t)*118 + 2*(1-t)*t*256 + t*t*184;
+              return `<line x1="${xL.toFixed(1)}" y1="${yL.toFixed(1)}" x2="${xL.toFixed(1)}" y2="246"/><line x1="${xR.toFixed(1)}" y1="${yR.toFixed(1)}" x2="${xR.toFixed(1)}" y2="246"/>`;
+            }).join("")}
+            ${[0.14, 0.26, 0.38, 0.50, 0.62, 0.74, 0.86].map(t => {
+              const x = (1-t)*(1-t)*192 + 2*(1-t)*t*320 + t*t*448;
+              const y = (1-t)*(1-t)*118 + 2*(1-t)*t*262 + t*t*118;
+              return `<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${x.toFixed(1)}" y2="246"/>`;
+            }).join("")}
+          </g>
+          <line x1="28" y1="246" x2="612" y2="246" stroke="${C.terracotta}" stroke-width="6.5"/>
+          <g stroke="${C.terraDark}" stroke-width="5.5" fill="none">
+            <path d="M182,306 L187,112 L197,112 L202,306"/>
+            <line x1="185" y1="156" x2="199" y2="156"/><line x1="184" y1="200" x2="200" y2="200"/>
+            <path d="M438,306 L443,112 L453,112 L458,306"/>
+            <line x1="441" y1="156" x2="455" y2="156"/><line x1="440" y1="200" x2="456" y2="200"/>
+          </g>
+          <polygon points="316,314 326,292 332,314" fill="${C.cream}"/>
+          <path d="M312,316 L336,316 L332,321 L316,321 Z" fill="${C.pineDark}"/>
+          <path d="M170,342 Q320,332 470,342" fill="none" stroke="${C.cream}" stroke-width="2" stroke-opacity="0.65"/>
+        `;
+
+      case "gateway_arch":
+        return `
+          <rect x="28" y="304" width="584" height="78" fill="${C.waterMid}"/>
+          <rect x="28" y="344" width="584" height="38" fill="${C.waterDeep}"/>
+          <rect x="284" y="252" width="72" height="32" fill="${C.pineSoft}"/>
+          <path d="M302,252 A18,16 0 0,1 338,252 Z" fill="${C.pineMid}"/>
+          <rect x="28" y="280" width="584" height="28" fill="${C.pineDark}"/>
+          <path d="M156,294 C188,42 452,42 484,294 L452,294 C426,82 214,82 188,294 Z" fill="${C.cream}" stroke="${C.pineDark}" stroke-width="1.6"/>
+          <path d="M320,62 C418,62 464,178 476,294 L452,294 C432,128 368,82 320,82 Z" fill="${C.stoneMid}" fill-opacity="0.45"/>
+          <path d="M210,330 Q320,322 430,330 M240,354 Q320,348 400,354" fill="none" stroke="${C.cream}" stroke-width="2" stroke-opacity="0.68"/>
+        `;
+
+      case "liberty":
+        return `
+          <rect x="28" y="308" width="584" height="74" fill="${C.waterMid}"/>
+          <rect x="28" y="346" width="584" height="36" fill="${C.waterDeep}"/>
+          <path d="M140,334 Q320,324 500,334" fill="none" stroke="${C.cream}" stroke-width="2" stroke-opacity="0.72"/>
+          <polygon points="218,314 236,292 404,292 422,314" fill="${C.stoneMid}" stroke="${C.pineDark}" stroke-width="1.4"/>
+          <polygon points="264,292 276,232 364,232 376,292" fill="${C.stoneLight}" stroke="${C.pineDark}" stroke-width="1.5"/>
+          <g fill="${C.pineDark}">
+            <rect x="292" y="250" width="10" height="22"/><rect x="315" y="250" width="10" height="22"/><rect x="338" y="250" width="10" height="22"/>
+          </g>
+          <path d="M294,232 L302,142 L288,96 L302,94 L312,132 L338,132 L346,232 Z" fill="${C.sageMid}" stroke="${C.pineDark}" stroke-width="1.5"/>
+          <circle cx="322" cy="118" r="12" fill="${C.sageMid}"/>
+          <path d="M308,114 L300,102 M315,108 L312,94 M322,106 L322,92 M329,108 L332,94 M336,114 L344,102" stroke="${C.pineDark}" stroke-width="2"/>
+          <circle cx="294" cy="82" r="16" fill="${C.ochreGlow}" fill-opacity="0.65"/>
+          <circle cx="294" cy="82" r="9" fill="${C.ochreSun}"/>
+          <circle cx="294" cy="82" r="4.5" fill="${C.cream}"/>
+        `;
+
+      case "memorial":
+        return `
+          <rect x="28" y="284" width="584" height="98" fill="${C.pineDark}"/>
+          <polygon points="184,294 456,294 512,382 128,382" fill="${C.waterMid}"/>
+          <polygon points="204,294 436,294 480,382 160,382" fill="${C.waterLight}" fill-opacity="0.55"/>
+          <rect x="172" y="274" width="296" height="20" fill="${C.stoneLight}"/>
+          <rect x="188" y="182" width="264" height="16" fill="${C.cream}" stroke="${C.pineDark}" stroke-width="1.3"/>
+          <rect x="212" y="164" width="216" height="18" fill="${C.stoneLight}" stroke="${C.pineDark}" stroke-width="1.3"/>
+          <rect x="196" y="198" width="248" height="76" fill="${C.pineDark}"/>
+          <g fill="${C.cream}" stroke="${C.pineDark}" stroke-width="1">
+            <rect x="196" y="198" width="16" height="76"/><rect x="232" y="198" width="16" height="76"/>
+            <rect x="268" y="198" width="16" height="76"/><rect x="304" y="198" width="16" height="76"/>
+            <rect x="340" y="198" width="16" height="76"/><rect x="376" y="198" width="16" height="76"/>
+            <rect x="412" y="198" width="16" height="76"/><rect x="436" y="198" width="12" height="76"/>
+          </g>
+          <rect x="216" y="308" width="208" height="6" fill="${C.cream}" fill-opacity="0.6"/>
+          <rect x="232" y="324" width="176" height="5" fill="${C.cream}" fill-opacity="0.45"/>
+          <rect x="248" y="340" width="144" height="4" fill="${C.cream}" fill-opacity="0.32"/>
+          <circle cx="96" cy="268" r="32" fill="${C.pineMid}"/><circle cx="132" cy="274" r="26" fill="${C.pineSoft}"/>
+          <circle cx="544" cy="268" r="32" fill="${C.pineMid}"/><circle cx="508" cy="274" r="26" fill="${C.pineSoft}"/>
+        `;
+
+      case "volcano":
+        return `
+          <polygon points="84,290 274,106 366,106 556,290" fill="${C.pineMid}"/>
+          <polygon points="320,106 366,106 556,290 364,290" fill="${C.pineDark}" fill-opacity="0.35"/>
+          <polygon points="274,106 366,106 420,164 374,154 344,178 316,150 282,172 232,160" fill="${C.cream}"/>
+          <rect x="28" y="288" width="584" height="94" fill="${C.waterDeep}"/>
+          <polygon points="212,292 428,292 368,354 272,354" fill="${C.cream}" fill-opacity="0.28"/>
+          <polygon points="408,322 442,296 462,296 494,322" fill="${C.pineMid}"/>
+          <path d="M28,302 L176,302 L128,382 L28,382 Z" fill="${C.pineDark}"/>
+          <path d="M612,302 L464,302 L512,382 L612,382 Z" fill="${C.pineDark}"/>
+          ${detailedPine(64, 312, 88, C.pineDark)}
+          ${detailedPine(112, 314, 66, C.pineMid)}
+          ${detailedPine(528, 314, 68, C.pineMid)}
+          ${detailedPine(576, 312, 90, C.pineDark)}
+        `;
+
+      case "redwood":
+        return `
+          <polygon points="150,28 340,382 248,382 98,28" fill="${C.ochreGlow}" fill-opacity="0.36"/>
+          <polygon points="310,28 510,382 425,382 262,28" fill="${C.ochreGlow}" fill-opacity="0.28"/>
+          <path d="M28,296 Q320,274 612,298 L612,382 L28,382 Z" fill="${C.pineMid}"/>
+          <rect x="176" y="28" width="38" height="316" fill="${C.pineSoft}"/>
+          <rect x="424" y="28" width="42" height="318" fill="${C.pineSoft}"/>
+          <rect x="68" y="28" width="68" height="354" fill="${C.pineDark}"/>
+          <line x1="88" y1="28" x2="88" y2="382" stroke="${C.pineSoft}" stroke-width="1.6" stroke-opacity="0.45"/>
+          <line x1="112" y1="28" x2="112" y2="382" stroke="${C.pineSoft}" stroke-width="1.6" stroke-opacity="0.35"/>
+          <rect x="284" y="28" width="82" height="354" fill="${C.terraDark}"/>
+          <line x1="308" y1="28" x2="308" y2="382" stroke="${C.terracotta}" stroke-width="2" stroke-opacity="0.45"/>
+          <line x1="338" y1="28" x2="338" y2="382" stroke="${C.terracotta}" stroke-width="2" stroke-opacity="0.35"/>
+          <rect x="508" y="28" width="62" height="354" fill="${C.pineDark}"/>
+          <path d="M28,338 Q200,318 390,340 T612,334 L612,382 L28,382 Z" fill="${C.pineDark}"/>
+          <path d="M226,382 Q256,350 238,328 L262,328 Q284,352 268,382 Z" fill="${C.sandSky1}"/>
+        `;
+
+      case "cave":
+        return `
+          <rect x="28" y="28" width="584" height="354" fill="${C.pineDark}"/>
+          <ellipse cx="320" cy="242" rx="236" ry="142" fill="${C.ochreGlow}" fill-opacity="0.86"/>
+          <ellipse cx="320" cy="252" rx="184" ry="108" fill="${C.cream}" fill-opacity="0.55"/>
+          <polygon points="128,112 146,228 164,112" fill="${C.pineDark}"/>
+          <polygon points="184,96 202,256 220,96" fill="${C.pineDark}"/>
+          <polygon points="248,88 264,218 280,88" fill="${C.terraDark}"/>
+          <polygon points="316,86 330,196 344,86" fill="${C.pineDark}"/>
+          <polygon points="378,94 396,244 414,94" fill="${C.terraDark}"/>
+          <polygon points="446,108 464,222 482,108" fill="${C.pineDark}"/>
+          <rect x="110" y="340" width="420" height="42" fill="${C.waterDeep}"/>
+          <polygon points="154,354 176,246 198,354" fill="${C.pineMid}"/>
+          <polygon points="232,358 258,216 286,358" fill="${C.terraDark}"/>
+          <polygon points="338,358 364,228 390,358" fill="${C.pineMid}"/>
+          <polygon points="418,354 438,262 458,354" fill="${C.terraDark}"/>
+          <path d="M210,364 Q320,356 430,364" fill="none" stroke="${C.ochreGlow}" stroke-width="1.8" stroke-opacity="0.65"/>
+        `;
+
+      case "dunes":
+        return `
+          <path d="M28,278 Q190,206 376,262 T612,236 L612,382 L28,382 Z" fill="${C.sandSky1}"/>
+          <path d="M28,318 C184,234 304,242 426,304 L612,282 L612,382 L28,382 Z" fill="${C.cream}"/>
+          <path d="M298,254 C368,266 412,298 456,382 L612,382 L612,282 L426,304 Z" fill="${C.ochreMid}" fill-opacity="0.68"/>
+          <path d="M28,348 Q246,306 482,382 L28,382 Z" fill="${C.sandSky2}"/>
+          <path d="M110,356 Q190,348 270,360 M140,368 Q220,360 300,372" fill="none" stroke="${C.ochreSun}" stroke-width="1.5" stroke-opacity="0.55"/>
+        `;
+
+      case "parkway":
+        return `
+          <path d="M28,248 Q180,192 340,238 T612,216 L612,382 L28,382 Z" fill="${C.sageMid}"/>
+          <path d="M28,284 Q240,238 430,278 T612,268 L612,382 L28,382 Z" fill="${C.pineSoft}"/>
+          <path d="M28,316 Q320,292 612,316 L612,382 L28,382 Z" fill="${C.pineDark}"/>
+          <path d="M338,296 C262,318 408,342 248,382 L368,382 C466,340 314,318 362,296 Z" fill="${C.stoneLight}"/>
+          <path d="M350,298 C286,318 436,340 308,382" fill="none" stroke="${C.ochreSun}" stroke-width="2.6" stroke-dasharray="8,6"/>
+          <circle cx="148" cy="322" r="22" fill="${C.terracotta}"/><circle cx="176" cy="328" r="18" fill="${C.ochreSun}"/>
+          ${detailedPine(68, 330, 84, C.pineDark)}
+          ${detailedPine(112, 334, 66, C.pineMid)}
+          ${detailedPine(526, 334, 68, C.pineMid)}
+          ${detailedPine(572, 330, 88, C.pineDark)}
+        `;
+
+      case "tropics":
+        return `
+          <rect x="28" y="282" width="584" height="100" fill="${C.waterMid}"/>
+          <rect x="28" y="328" width="584" height="54" fill="${C.waterDeep}"/>
+          <path d="M412,286 Q486,262 568,286 Z" fill="${C.pineSoft}"/>
+          <path d="M220,312 Q350,302 490,312 M270,344 Q390,336 530,344" fill="none" stroke="${C.cream}" stroke-width="2" stroke-opacity="0.72"/>
+          <path d="M28,316 Q178,290 296,340 L276,382 L28,382 Z" fill="${C.pineDark}"/>
+          <path d="M134,330 Q158,220 212,142" fill="none" stroke="${C.pineDark}" stroke-width="12" stroke-linecap="round"/>
+          <path d="M212,142 Q152,130 124,166 M212,142 Q170,102 138,112 M212,142 Q246,98 286,118 M212,142 Q268,132 294,168 M212,142 Q230,170 256,196" fill="none" stroke="${C.pineMid}" stroke-width="7.5" stroke-linecap="round"/>
+          <path d="M84,328 Q98,254 132,202" fill="none" stroke="${C.pineMid}" stroke-width="8" stroke-linecap="round"/>
+          <path d="M132,202 Q94,196 76,218 M132,202 Q158,178 184,192 M132,202 Q166,202 182,224" fill="none" stroke="${C.pineSoft}" stroke-width="5.5" stroke-linecap="round"/>
+          <path d="M356,338 L356,318 M350,318 C350,310 364,308 368,314 C370,306 372,296 366,294 L376,295" fill="none" stroke="${C.cream}" stroke-width="2.4" stroke-linecap="round"/>
+        `;
+
+      case "fort":
+        return `
+          <rect x="28" y="302" width="584" height="80" fill="${C.pineDark}"/>
+          <polygon points="124,308 154,216 486,216 516,308" fill="${C.stoneLight}" stroke="${C.pineDark}" stroke-width="1.6"/>
+          <line x1="142" y1="252" x2="498" y2="252" stroke="${C.stoneDark}" stroke-width="1.2" stroke-opacity="0.5"/>
+          <line x1="134" y1="280" x2="506" y2="280" stroke="${C.stoneDark}" stroke-width="1.2" stroke-opacity="0.5"/>
+          <g fill="${C.pineDark}">
+            <rect x="172" y="200" width="34" height="18"/><rect x="244" y="200" width="34" height="18"/>
+            <rect x="362" y="200" width="34" height="18"/><rect x="434" y="200" width="34" height="18"/>
+          </g>
+          <path d="M294,308 L294,256 A26,26 0 0,1 346,256 L346,308 Z" fill="${C.pineDark}"/>
+          <line x1="320" y1="216" x2="320" y2="118" stroke="${C.pineDark}" stroke-width="3.2"/>
+          <polygon points="320,120 378,134 320,150" fill="${C.terracotta}"/>
+          <circle cx="196" cy="336" r="14" fill="none" stroke="${C.cream}" stroke-width="3"/>
+          <line x1="176" y1="326" x2="224" y2="318" stroke="${C.cream}" stroke-width="7" stroke-linecap="round"/>
+          <line x1="168" y1="348" x2="196" y2="336" stroke="${C.cream}" stroke-width="3.5"/>
+        `;
+
+      case "heritage":
+        return `
+          <rect x="28" y="302" width="584" height="80" fill="${C.pineDark}"/>
+          <polygon points="292,382 308,304 332,304 348,382" fill="${C.sandSky1}"/>
+          <rect x="176" y="206" width="288" height="98" fill="${C.terracotta}" stroke="${C.pineDark}" stroke-width="1.6"/>
+          <polygon points="164,206 320,156 476,206" fill="${C.cream}" stroke="${C.pineDark}" stroke-width="1.6"/>
+          <rect x="298" y="118" width="44" height="40" fill="${C.cream}" stroke="${C.pineDark}" stroke-width="1.5"/>
+          <polygon points="290,118 320,90 350,118" fill="${C.pineDark}"/>
+          <line x1="320" y1="90" x2="320" y2="76" stroke="${C.pineDark}" stroke-width="2"/>
+          <path d="M298,304 L298,250 A22,22 0 0,1 342,250 L342,304 Z" fill="${C.cream}"/>
+          <g fill="${C.cream}">
+            <rect x="202" y="232" width="24" height="36"/><rect x="244" y="232" width="24" height="36"/>
+            <rect x="372" y="232" width="24" height="36"/><rect x="414" y="232" width="24" height="36"/>
+          </g>
+          ${detailedPine(88, 314, 88, C.pineMid)}
+          ${detailedPine(132, 318, 68, C.pineSoft)}
+          ${detailedPine(508, 318, 68, C.pineSoft)}
+          ${detailedPine(552, 314, 88, C.pineMid)}
+        `;
+
+      default:
+        return `
+          <polygon points="56,294 204,116 346,294" fill="${C.pineMid}"/>
+          <polygon points="204,116 346,294 228,294" fill="${C.pineDark}" fill-opacity="0.32"/>
+          <polygon points="204,116 256,182 218,174 198,196 176,170 150,180" fill="${C.cream}"/>
+          <polygon points="244,294 402,104 558,294" fill="${C.pineSoft}"/>
+          <polygon points="402,104 558,294 418,294" fill="${C.pineDark}" fill-opacity="0.4"/>
+          <polygon points="402,104 458,174 418,166 398,188 374,162 348,172" fill="${C.cream}"/>
+          <rect x="28" y="290" width="584" height="92" fill="${C.pineDark}"/>
+          <path d="M308,290 C276,316 352,340 282,382 L358,382 C408,340 326,316 338,290 Z" fill="${C.waterLight}"/>
+          <path d="M306,348 Q332,342 356,348" fill="none" stroke="${C.cream}" stroke-width="1.8" stroke-opacity="0.75"/>
+          ${detailedPine(68, 312, 92, C.pineDark)}
+          ${detailedPine(114, 318, 72, C.pineMid)}
+          ${detailedPine(156, 316, 56, C.pineSoft)}
+          ${detailedPine(484, 316, 58, C.pineSoft)}
+          ${detailedPine(526, 318, 74, C.pineMid)}
+          ${detailedPine(572, 312, 94, C.pineDark)}
+        `;
+    }
+  }
+
+  function buildHorizontalEmblemSVG(d, yrs, vis) {
+    const motif = classifyMotif(d.park, d.park_type);
+    const n = yrs.length;
+    const maxV = Math.max(...vis, 1);
+    const minV = Math.min(...vis);
+    const peakIdx = vis.indexOf(Math.max(...vis));
+    const latestIdx = n - 1;
+
+    const peakFrac = n > 1 ? peakIdx / (n - 1) : 0.5;
+    const sunX = 136 + peakFrac * 368;
+    const sunY = 104;
+    const sunR = 22 + 2.6 * Math.log10(maxV + 10);
+
+    const xL = 28, xR = 612;
+    let ridgePts = [`${xL},298`];
+    let backRidgePts = [`${xL},298`];
+    for (let i = 0; i < n; i++) {
+      const x = xL + ((xR - xL) * i) / Math.max(n - 1, 1);
+      const norm = (vis[i] - minV) / Math.max(maxV - minV, 1);
+      const y = 256 - norm * 54;
+      ridgePts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+      backRidgePts.push(`${x.toFixed(1)},${(y - 14 + 6 * Math.sin(i * 0.7)).toFixed(1)}`);
+    }
+    ridgePts.push(`${xR},298`);
+    backRidgePts.push(`${xR},298`);
+
+    const nameLen = d.park.length;
+    const bannerFont = nameLen > 38 ? 14.5 : (nameLen > 28 ? 16.5 : 18.5);
+
+    return `
+      <title id="art-svg-title">${esc(d.park)} (${yrs[0]}–${yrs[latestIdx]})</title>
+      <desc id="art-svg-desc">${esc(motif.label)} illustration for ${esc(d.park)} across ${yrs[0]}–${yrs[latestIdx]}.</desc>
+      <defs>
+        <clipPath id="landscape-scene-clip">
+          <rect x="28" y="28" width="584" height="354" rx="8"/>
+        </clipPath>
+      </defs>
+
+      <rect x="0" y="0" width="640" height="450" rx="12" fill="${C.pineDark}"/>
+      <rect x="12" y="12" width="616" height="426" rx="9" fill="none" stroke="${C.sandSky1}" stroke-width="1.4"/>
+
+      <g clip-path="url(#landscape-scene-clip)">
+        <rect x="28" y="28" width="584" height="354" fill="${C.sandSky3}"/>
+        <rect x="28" y="28" width="584" height="148" fill="${C.sandSky2}"/>
+        <rect x="28" y="28" width="584" height="72" fill="${C.sandSky1}"/>
+
+        <circle cx="${sunX.toFixed(1)}" cy="${sunY}" r="${(sunR + 28).toFixed(1)}" fill="${C.ochreGlow}" fill-opacity="0.34"/>
+        <circle cx="${sunX.toFixed(1)}" cy="${sunY}" r="${(sunR + 12).toFixed(1)}" fill="${C.ochreGlow}" fill-opacity="0.72"/>
+        <circle cx="${sunX.toFixed(1)}" cy="${sunY}" r="${sunR.toFixed(1)}" fill="${C.ochreSun}"/>
+
+        ${cloud(72, 92, 92)}
+        ${cloud(468, 82, 104)}
+        ${bird(422, 96, 1.0)}
+        ${bird(440, 88, 0.8)}
+        ${bird(454, 99, 0.7)}
+
+        <polygon points="${backRidgePts.join(" ")}" fill="${C.sageMist}"/>
+        <polygon points="${ridgePts.join(" ")}" fill="${C.sageLight}"/>
+
+        ${renderScene(motif.id)}
+      </g>
+
+      <rect x="28" y="28" width="584" height="354" rx="8" fill="none" stroke="${C.cream}" stroke-width="2.6"/>
+      <rect x="28" y="394" width="584" height="34" rx="6" fill="${C.cream}"/>
+      <text x="44" y="416" fill="${C.pineDark}" font-size="${bannerFont}" font-weight="700" font-family="Georgia, Palatino, serif">${esc(d.park)}</text>
+      <text x="596" y="415" text-anchor="end" fill="#4A5B51" font-size="10.5" font-weight="600" letter-spacing="0.9" font-family="system-ui, sans-serif">${yrs[0]}–${yrs[latestIdx]} · PEAK ${yrs[peakIdx]}</text>
+    `;
+  }
+
+  const catSel = document.getElementById("park-cat-filter");
+  const parkSel = document.getElementById("park-art-select");
+  const startSel = document.getElementById("year-start-select");
+  const endSel = document.getElementById("year-end-select");
+
+  for (let y = 2000; y <= 2025; y++) {
+    const o1 = document.createElement("option");
+    o1.value = y; o1.textContent = y;
+    if (y === 2000) o1.selected = true;
+    startSel.appendChild(o1);
+
+    const o2 = document.createElement("option");
+    o2.value = y; o2.textContent = y;
+    if (y === 2025) o2.selected = true;
+    endSel.appendChild(o2);
+  }
+
+  function populateParkDropdown(preferredPark) {
+    const cat = catSel.value;
+    parkSel.innerHTML = "";
+    let chosenIdx = -1;
+    PARKS.forEach((d, idx) => {
+      if (cat === "ALL" || d.park_type === cat) {
+        const opt = document.createElement("option");
+        opt.value = idx;
+        opt.textContent = d.park;
+        if (d.park === preferredPark) {
+          opt.selected = true;
+          chosenIdx = idx;
+        }
+        parkSel.appendChild(opt);
+      }
+    });
+    if (chosenIdx === -1 && parkSel.options.length > 0) {
+      parkSel.options[0].selected = true;
+    }
+  }
+
+  function renderAll() {
+    const idx = Number(parkSel.value);
+    const d = PARKS[idx];
+    let y0 = Number(startSel.value);
+    let y1 = Number(endSel.value);
+    if (y0 > y1) {
+      const tmp = y0; y0 = y1; y1 = tmp;
+      startSel.value = y0;
+      endSel.value = y1;
+    }
+
+    const yrs = [], vis = [], rnks = [], unts = [];
+    for (let i = 0; i < d.years.length; i++) {
+      if (d.years[i] >= y0 && d.years[i] <= y1) {
+        yrs.push(d.years[i]);
+        vis.push(d.visits[i]);
+        rnks.push(d.ranks[i]);
+        unts.push(d.units[i]);
+      }
+    }
+
+    // Fallback if park reported only outside chosen sub-window
+    if (!yrs.length) {
+      yrs.push(...d.years);
+      vis.push(...d.visits);
+      rnks.push(...d.ranks);
+      unts.push(...d.units);
+    }
+
+    const n = yrs.length;
+    const maxVal = Math.max(...vis);
+    const minVal = Math.min(...vis);
+    const peakIdx = vis.indexOf(maxVal);
+    const minIdx = vis.indexOf(minVal);
+    const latestIdx = n - 1;
+    const medVal = medianValue(vis);
+    const totVal = vis.reduce((a, b) => a + b, 0);
+
+    const motif = classifyMotif(d.park, d.park_type);
+    document.getElementById("info-park-title").textContent = d.park;
+    document.getElementById("park-art-category-badge").textContent = d.park_type;
+    document.getElementById("park-art-motif-badge").textContent = motif.label;
+    document.getElementById("stat-span").textContent = `${yrs[0]}–${yrs[latestIdx]} (${n} yrs)`;
+    document.getElementById("stat-latest").textContent = `${fmt.format(vis[latestIdx])} (${yrs[latestIdx]})`;
+    document.getElementById("stat-peak").textContent = `${yrs[peakIdx]} (${fmt.format(maxVal)})`;
+    document.getElementById("stat-min").textContent = `${yrs[minIdx]} (${fmt.format(minVal)})`;
+    document.getElementById("stat-median").textContent = fmt.format(medVal);
+    document.getElementById("stat-total").textContent = fmt.format(totVal);
+
+    document.getElementById("park-art-svg").innerHTML = buildHorizontalEmblemSVG(d, yrs, vis);
+
+    // Update individual park Plotly chart underneath
+    if (window.Plotly) {
+      const hoverTxt = yrs.map((yr, i) =>
+        `<b>${esc(d.park)}</b><br>` +
+        `Calendar year: ${yr}<br>` +
+        `Annual recreation visits: ${fmt.format(vis[i])}<br>` +
+        `System rank: #${rnks[i]} of ${unts[i]} units<br>` +
+        `Category: ${esc(d.park_type)}`
+      );
+
+      const traces = [
+        {
+          x: yrs,
+          y: vis,
+          type: "scatter",
+          mode: "lines+markers",
+          name: d.park,
+          fill: "tozeroy",
+          fillcolor: "rgba(103, 139, 116, 0.16)",
+          line: { color: "#2F6B48", width: 3 },
+          marker: { color: "#1B3326", size: 7.5, line: { color: "#FAF7F0", width: 1.3 } },
+          text: hoverTxt,
+          hovertemplate: "%{text}<extra></extra>",
+          showlegend: false
+        },
+        {
+          x: [yrs[peakIdx]],
+          y: [vis[peakIdx]],
+          type: "scatter",
+          mode: "markers",
+          name: "Peak Year",
+          marker: { color: "#D89E44", size: 12, line: { color: "#1B3326", width: 1.8 } },
+          text: [hoverTxt[peakIdx]],
+          hovertemplate: "<b>Peak Year</b><br>%{text}<extra></extra>",
+          showlegend: false
+        }
+      ];
+
+      const layout = {
+        title: {
+          text: `<b>${esc(d.park)} — Yearly Recreation Visits (${yrs[0]}–${yrs[latestIdx]})</b>`,
+          x: 0,
+          xanchor: "left",
+          font: { family: "Georgia, Palatino, serif", size: 17, color: "#1E382B" }
+        },
+        paper_bgcolor: "#FAF7F0",
+        plot_bgcolor: "#FAF7F0",
+        hovermode: "closest",
+        hoverlabel: {
+          bgcolor: "#FAF7F0",
+          bordercolor: "#C8C2B0",
+          font: { family: "system-ui, sans-serif", size: 12.5, color: "#1E382B" }
+        },
+        margin: { t: 48, r: 22, b: 44, l: 74 },
+        xaxis: {
+          title: "",
+          tickformat: "d",
+          dtick: yrs.length <= 12 ? 1 : (yrs.length <= 20 ? 2 : 5),
+          showgrid: false,
+          zeroline: false,
+          tickfont: { color: "#4A5B51", size: 12 }
+        },
+        yaxis: {
+          title: { text: "Annual recreation visits", font: { color: "#4A5B51", size: 12.5 } },
+          rangemode: "tozero",
+          gridcolor: "#E6E1D2",
+          zeroline: false,
+          tickfont: { color: "#4A5B51", size: 12 }
+        },
+        annotations: [
+          {
+            x: yrs[peakIdx],
+            y: vis[peakIdx],
+            text: `Peak (${yrs[peakIdx]}): ${fmt.format(vis[peakIdx])}`,
+            showarrow: true,
+            arrowhead: 2,
+            arrowsize: 0.8,
+            arrowcolor: "#1B3326",
+            ax: yrs[peakIdx] > (yrs[0] + yrs[latestIdx]) / 2 ? -55 : 55,
+            ay: -28,
+            bgcolor: "#FAF7F0",
+            bordercolor: "#D89E44",
+            borderwidth: 1.2,
+            font: { size: 11.5, color: "#1E382B" }
+          }
+        ]
+      };
+
+      window.Plotly.react("single-park-plot", traces, layout, {
+        responsive: true,
+        displayModeBar: "hover",
+        displaylogo: false,
+        modeBarButtonsToRemove: ["lasso2d", "select2d"]
+      });
+    }
+  }
+
+  populateParkDropdown("Acadia NP");
+  catSel.addEventListener("change", () => {
+    const curName = PARKS[Number(parkSel.value)] ? PARKS[Number(parkSel.value)].park : "Acadia NP";
+    populateParkDropdown(curName);
+    renderAll();
+  });
+  parkSel.addEventListener("change", renderAll);
+  startSel.addEventListener("change", renderAll);
+  endSel.addEventListener("change", renderAll);
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", renderAll);
+  } else {
+    renderAll();
+  }
+})();
+</script>
+'
+))
+
+attachDependencies(ui, list(plotly:::plotlyMainBundle()))
+```

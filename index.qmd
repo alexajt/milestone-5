@@ -1,30 +1,22 @@
 ---
-title: "A Year in the National Parks"
-subtitle: "How Park Designation Shapes Attendance Across 47 Years of NPS Data"
+title: "National Parks, Year by Year: Visitation, 2000–2025"
+subtitle: "How Park Designation Shapes Annual Attendance Across 9,612 Park-Year Observations"
 execute:
   echo: false
   warning: false
   message: false
 ---
 
-## Does Park Designation Drive Crowd Size?
-
-Every point in the scatterplot below represents one National Park Service unit in a single year between 1979 and 2025 (**16,095 park-year observations** in total). Grouping these observations by **Park Unit Type** reveals a surprising pattern: while flagship National Parks draw huge headlines, **Recreation Areas, Seashores & Parkways** actually hold the highest median attendance (~1.16 million visits per year), whereas **Historic Sites** and **National Monuments** make up the vast majority of locations with smaller, steadier crowds (~110,000 visits per year).
-
 ```{r}
-#| label: fig-park-visitation-by-type
-#| fig-cap: "Annual recreation visits across 16,095 park-year observations (1979–2025), colored by NPS unit category. Solid lines track the median attendance for each category each year."
-#| column: body-outset
-#| fig-width: 11
-#| fig-height: 7.5
-#| fig-dpi: 300
-
+#| label: setup-home
 library(tidyverse)
+library(plotly)
 
 annual_visits <- read_csv(
   "nps_annual_visits_1979_2025.csv",
   show_col_types = FALSE
 ) |>
+  filter(year >= 2000, year <= 2025) |>
   mutate(
     suffix = word(park, -1),
     park_type = case_when(
@@ -41,105 +33,140 @@ annual_visits <- read_csv(
         "Historic Sites, Battlefields & Memorials",
         "National Monuments"
       )
+    ),
+    y_log = log10(recreation_visits + 1),
+    hover_label = paste0(
+      "<b>", park, "</b><br>",
+      year, " · ", scales::comma(recreation_visits), " visits<br>",
+      "<span style='color:#5A6B60;'>", park_type, "</span>"
     )
   )
+
+n_obs <- nrow(annual_visits)
+n_parks <- n_distinct(annual_visits$park)
+```
+
+## Does Park Designation Shape Annual Crowd Size?
+
+Each dot below is **one National Park Service unit in one calendar year** from **2000 to 2025** (**`r scales::comma(n_obs)` annual observations** across **`r n_parks` units**). Hover over any dot to see which park it represents, explore individual parks on the **[Park Attendance](explore.qmd)** tab, or read the fixed comparison on the **[Visitation After 2020](story.qmd)** tab.
+
+```{r}
+#| label: fig-park-visitation-by-type
+#| fig-cap: "9,612 annual park-year observations (2000–2025) colored by NPS designation, with solid lines showing each category's yearly median. Hover any dot for park details (drag horizontally to zoom into specific years; double-click to reset). Plotted on a pseudo-log vertical scale so smaller sites remain visible alongside multi-million-visit parks. Source: NPS Visitor Use Statistics."
+#| column: body-outset
 
 type_medians <- annual_visits |>
   group_by(year, park_type) |>
   summarize(
     median_visits = median(recreation_visits, na.rm = TRUE),
     .groups = "drop"
+  ) |>
+  mutate(
+    y_log = log10(median_visits + 1),
+    hover_label = paste0(
+      "<b>", park_type, "</b><br>",
+      year, " category median · ", scales::comma(round(median_visits)), " visits"
+    )
   )
 
-top_2025 <- annual_visits |>
-  filter(year == max(year)) |>
-  slice_max(recreation_visits, n = 1, with_ties = FALSE)
-
 palette_cols <- c(
-  "Recreation Areas, Seashores & Parkways" = "#1D6996",
-  "National Parks & Preserves" = "#2E6F40",
-  "Historic Sites, Battlefields & Memorials" = "#CC792B",
-  "National Monuments" = "#944654"
+  "Recreation Areas, Seashores & Parkways" = "#4A7C82",
+  "National Parks & Preserves" = "#2F6B48",
+  "Historic Sites, Battlefields & Memorials" = "#C48347",
+  "National Monuments" = "#A45D57"
 )
 
-ggplot(annual_visits, aes(x = year, y = recreation_visits, color = park_type)) +
-  geom_point(
-    position = position_jitter(width = 0.22, height = 0, seed = 2026),
-    alpha = 0.18,
-    size = 0.85
-  ) +
-  geom_line(
-    data = type_medians,
-    aes(y = median_visits, group = park_type),
-    linewidth = 1.15
-  ) +
-  geom_point(
-    data = top_2025,
-    color = "#1F3B2C",
-    size = 2.8
-  ) +
-  annotate(
-    "label",
-    x = 2025,
-    y = top_2025$recreation_visits,
-    label = paste0("2025 Leader:\n", top_2025$park),
-    hjust = 1,
-    vjust = 1.25,
-    size = 3,
-    fontface = "bold",
-    color = "#1F3B2C",
-    fill = "#FFFDF9",
-    label.size = 0.2
-  ) +
-  annotate(
-    "text",
-    x = 2020,
-    y = 22000,
-    label = "2020 COVID-19 dip",
-    color = "#3A4A40",
-    fontface = "italic",
-    size = 3.2
-  ) +
-  scale_color_manual(values = palette_cols) +
-  scale_x_continuous(
-    breaks = seq(1980, 2025, by = 5),
-    limits = c(1979, 2026)
-  ) +
-  scale_y_continuous(
-    trans = scales::transform_pseudo_log(sigma = 1),
-    breaks = c(0, 10000, 100000, 1000000, 5000000, 10000000, 20000000),
-    labels = scales::label_comma()
-  ) +
-  labs(
-    title = "Every Park, Every Year: Visitation by NPS Unit Type (1979–2025)",
-    subtitle = "16,095 park-year observations (dots) and annual category medians (solid lines)",
-    x = "Year",
-    y = "Annual recreation visits (pseudo-log scale)",
-    color = "Park Unit Category",
-    caption = "Source: National Park Service Visitor Use Statistics (1979–2025)."
-  ) +
-  guides(
-    color = guide_legend(
-      nrow = 2,
-      byrow = TRUE,
-      override.aes = list(alpha = 0.9, size = 2.5, linewidth = 1.3)
+y_breaks <- c(0, 10000, 100000, 1000000, 10000000)
+full_x_range <- c(1999.5, 2025.5)
+full_y_range <- c(-0.15, log10(24000000 + 1))
+
+p <- plot_ly(height = 530)
+
+for (cat_name in levels(annual_visits$park_type)) {
+  cat_pts <- filter(annual_visits, park_type == cat_name)
+  cat_med <- filter(type_medians, park_type == cat_name)
+  col_hex <- unname(palette_cols[cat_name])
+
+  p <- p |>
+    add_trace(
+      data = cat_pts,
+      x = ~year,
+      y = ~y_log,
+      type = "scattergl",
+      mode = "markers",
+      name = cat_name,
+      legendgroup = cat_name,
+      showlegend = FALSE,
+      marker = list(color = col_hex, size = 6.2, opacity = 0.28),
+      text = ~hover_label,
+      hovertemplate = "%{text}<extra></extra>"
+    ) |>
+    add_trace(
+      data = cat_med,
+      x = ~year,
+      y = ~y_log,
+      type = "scatter",
+      mode = "lines",
+      name = cat_name,
+      legendgroup = cat_name,
+      showlegend = TRUE,
+      line = list(color = col_hex, width = 2.8),
+      text = ~hover_label,
+      hovertemplate = "%{text}<extra></extra>"
     )
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    plot.background = element_rect(fill = "#FCFBF7", color = NA),
-    panel.background = element_rect(fill = "#FCFBF7", color = NA),
-    plot.title = element_text(face = "bold", color = "#1F3B2C", size = 16.5),
-    plot.subtitle = element_text(color = "#4A6355"),
-    plot.caption = element_text(color = "#667085", hjust = 0),
-    legend.position = "top",
-    legend.title = element_text(face = "bold"),
-    panel.grid.minor = element_blank()
+}
+
+p |>
+  layout(
+    paper_bgcolor = "#FAF7F0",
+    plot_bgcolor = "#FAF7F0",
+    hovermode = "closest",
+    dragmode = "zoom",
+    hoverlabel = list(
+      bgcolor = "#FAF7F0",
+      bordercolor = "#C8C2B0",
+      font = list(family = "system-ui, sans-serif", size = 12.5, color = "#1E382B")
+    ),
+    margin = list(t = 75, r = 20, b = 45, l = 70),
+    legend = list(
+      orientation = "h",
+      x = 0,
+      y = 1.03,
+      yanchor = "bottom",
+      font = list(size = 12, color = "#223028")
+    ),
+    xaxis = list(
+      title = "",
+      range = full_x_range,
+      tick0 = 2000,
+      tickformat = "d",
+      showgrid = FALSE,
+      zeroline = FALSE,
+      tickfont = list(color = "#4A5B51", size = 12)
+    ),
+    yaxis = list(
+      title = list(text = "Annual visits", font = list(color = "#4A5B51", size = 12.5)),
+      range = full_y_range,
+      fixedrange = TRUE,
+      tickvals = log10(y_breaks + 1),
+      ticktext = c("0", "10k", "100k", "1M", "10M"),
+      gridcolor = "#E6E1D2",
+      zeroline = FALSE,
+      tickfont = list(color = "#4A5B51", size = 12)
+    )
+  ) |>
+  config(
+    displayModeBar = "hover",
+    displaylogo = FALSE,
+    scrollZoom = FALSE,
+    modeBarButtonsToRemove = c(
+      "lasso2d", "select2d", "pan2d", "zoomIn2d", "zoomOut2d", "autoScale2d"
+    )
   )
 ```
 
-## Key Takeaways from the Data
+## Key Takeaways (2000–2025)
 
-- **Recreation Areas, Seashores & Parkways lead in median crowd size:** With a median of **1.16 million annual visits**, scenic roadways, beaches, and urban recreation areas consistently draw larger typical crowds than remote parks.
-- **National Parks & Preserves show steady multi-decade growth:** Across 3,394 park-year observations, flagship National Parks have grown to a median of over **537,000 annual visits**, with top units exceeding 10 million visitors.
-- **Historic Sites & National Monuments form the backbone of the system:** Over two-thirds of all park-year observations (10,808 out of 16,095) belong to historical parks, battlefields, memorials, and monuments, which typically welcome around **105,000 to 123,000 visitors per year**.
+- **Recreation Areas, Seashores & Parkways lead in typical annual crowd size:** Across 1,109 park-year observations (44 units), scenic roadways, seashores, and urban recreation corridors record a median of **1.09 million annual visits**.
+- **National Parks & Preserves sustain strong 21st-century attendance:** Across 1,953 park-year observations (76 units), flagship National Parks and Preserves hold a median of **520,171 annual visits**, with top units exceeding 10 million visits per year.
+- **Historic Sites & National Monuments form the numerical majority of the system:** Over two-thirds of all 2000–2025 observations (**6,550 of 9,612**) belong to historic sites, battlefields, memorials, and monuments, welcoming medians of roughly **97,000 to 113,000 annual visits**.

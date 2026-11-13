@@ -2,18 +2,26 @@ project:
   type: website
   render:
     - index.qmd
+    - explore.qmd
+    - story.qmd
     - about.qmd
 
 website:
-  title: "A Year in the National Parks"
+  title: "National Parks, Year by Year: Visitation, 2000–2025"
   navbar:
+    title: "National Parks, Year by Year: Visitation, 2000–2025"
     left:
       - href: index.qmd
         text: Home
+      - href: explore.qmd
+        text: Park Attendance
+      - href: story.qmd
+        text: Visitation After 2020
       - href: about.qmd
         text: About
 
 format:
   html:
     theme: sandstone
+    css: styles.css
     toc: true
